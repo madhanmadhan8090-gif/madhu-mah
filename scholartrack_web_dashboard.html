@@ -1,0 +1,840 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-slate-900 text-slate-100">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ScholarTrack - Scholarship & Fellowship Deadline Tracker</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Alpine.js for lightweight UI state management -->
+  <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f0f7ff',
+              100: '#e0effe',
+              500: '#0284c7',
+              600: '#0369a1',
+              700: '#075985',
+              900: '#0c4a6e',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    [x-cloak] { display: none !important; }
+    /* Custom scrollbar for dense data panels */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.6); }
+    ::-webkit-scrollbar-thumb { background: rgba(51, 65, 85, 0.8); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(71, 85, 105, 1); }
+  </style>
+</head>
+<body class="h-full font-sans antialiased bg-slate-950 text-slate-200 flex flex-col" x-data="scholarTrackApp()" x-init="initApp()">
+
+  <!-- Top Header Navigation -->
+  <header class="border-b border-slate-800 bg-slate-900/90 backdrop-blur sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <!-- Logo & Brand -->
+      <div class="flex items-center space-x-3">
+        <div class="p-2 bg-gradient-to-tr from-sky-500 to-indigo-600 rounded-xl shadow-lg shadow-sky-500/20">
+          <i data-lucide="graduation-cap" class="w-6 h-6 text-white"></i>
+        </div>
+        <div>
+          <div class="flex items-center space-x-2">
+            <h1 class="font-bold text-lg text-white tracking-tight">ScholarTrack</h1>
+            <span class="px-2 py-0.5 text-xs font-semibold bg-sky-500/10 text-sky-400 border border-sky-500/20 rounded-full">v2026.1</span>
+          </div>
+          <p class="text-xs text-slate-400">Verifiable Fellowship & Scholarship Deadline Engine</p>
+        </div>
+      </div>
+
+      <!-- Navigation Tabs -->
+      <nav class="hidden md:flex space-x-1 bg-slate-950/60 p-1 rounded-xl border border-slate-800">
+        <button @click="currentTab = 'dashboard'" :class="currentTab === 'dashboard' ? 'bg-sky-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'" class="px-4 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-2">
+          <i data-lucide="layout-dashboard" class="w-4 h-4"></i>
+          <span>Student Directory</span>
+          <span class="bg-slate-900 text-sky-300 text-xs px-2 py-0.5 rounded-full" x-text="filteredNotices.length"></span>
+        </button>
+        <button @click="currentTab = 'alerts'" :class="currentTab === 'alerts' ? 'bg-sky-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'" class="px-4 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-2 relative">
+          <i data-lucide="bell" class="w-4 h-4"></i>
+          <span>Change Timeline</span>
+          <span class="bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs px-1.5 py-0.2 rounded-full" x-text="alerts.length"></span>
+        </button>
+        <button @click="currentTab = 'operator'" :class="currentTab === 'operator' ? 'bg-sky-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'" class="px-4 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-2">
+          <i data-lucide="activity" class="w-4 h-4"></i>
+          <span>Collector Health</span>
+          <span x-show="collectorStatus.failed > 0" class="flex h-2 w-2 rounded-full bg-rose-500 animate-ping"></span>
+        </button>
+      </nav>
+
+      <!-- Action Controls -->
+      <div class="flex items-center space-x-3">
+        <!-- Timezone Selector -->
+        <div class="flex items-center space-x-2 bg-slate-800/80 px-3 py-1.5 rounded-lg border border-slate-700 text-xs">
+          <i data-lucide="globe" class="w-3.5 h-3.5 text-sky-400"></i>
+          <label class="text-slate-400 hidden sm:inline">TZ:</label>
+          <select x-model="userTimezone" class="bg-transparent text-slate-200 focus:outline-none font-mono cursor-pointer">
+            <option value="UTC" class="bg-slate-900">UTC</option>
+            <option value="America/New_York" class="bg-slate-900">EST (UTC-5)</option>
+            <option value="Europe/London" class="bg-slate-900">GMT (UTC+0)</option>
+            <option value="Asia/Kolkata" class="bg-slate-900">IST (UTC+5:30)</option>
+            <option value="Asia/Tokyo" class="bg-slate-900">JST (UTC+9)</option>
+          </select>
+        </div>
+
+        <!-- Manual Scraping Simulation Button -->
+        <button @click="triggerManualCollector()" :disabled="isScraping" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg border border-slate-700 text-xs font-medium transition flex items-center gap-2">
+          <i data-lucide="refresh-cw" class="w-3.5 h-3.5" :class="isScraping ? 'animate-spin text-sky-400' : ''"></i>
+          <span x-text="isScraping ? 'Collecting...' : 'Run Scraper'"></span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Mobile Navigation Bar -->
+  <div class="md:hidden border-b border-slate-800 bg-slate-900 px-4 py-2 flex justify-around">
+    <button @click="currentTab = 'dashboard'" :class="currentTab === 'dashboard' ? 'text-sky-400 border-b-2 border-sky-400' : 'text-slate-400'" class="py-1 text-xs font-medium flex items-center gap-1">
+      <i data-lucide="layout-dashboard" class="w-4 h-4"></i> Directory
+    </button>
+    <button @click="currentTab = 'alerts'" :class="currentTab === 'alerts' ? 'text-sky-400 border-b-2 border-sky-400' : 'text-slate-400'" class="py-1 text-xs font-medium flex items-center gap-1">
+      <i data-lucide="bell" class="w-4 h-4"></i> Alerts (<span x-text="alerts.length"></span>)
+    </button>
+    <button @click="currentTab = 'operator'" :class="currentTab === 'operator' ? 'text-sky-400 border-b-2 border-sky-400' : 'text-slate-400'" class="py-1 text-xs font-medium flex items-center gap-1">
+      <i data-lucide="activity" class="w-4 h-4"></i> Diagnostics
+    </button>
+  </div>
+
+  <!-- Main Container -->
+  <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
+
+    <!-- Live Compliance Banner (Requirement 07 & 03) -->
+    <div class="bg-sky-950/40 border border-sky-800/40 rounded-xl p-3 sm:p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+      <div class="flex items-center space-x-3">
+        <div class="p-2 bg-sky-500/10 rounded-lg text-sky-400">
+          <i data-lucide="shield-check" class="w-5 h-5"></i>
+        </div>
+        <div>
+          <span class="font-semibold text-slate-200">Ethical Scraping Protocol Active</span>
+          <p class="text-slate-400">Adhering to strict robots.txt parsing, rate limits (1 req/3s), and zero automated eligibility decision claiming.</p>
+        </div>
+      </div>
+      <div class="flex items-center space-x-4 text-slate-400 self-end sm:self-auto font-mono">
+        <span>Sources: <strong class="text-emerald-400">2 Approved</strong></span>
+        <span>•</span>
+        <span>Last Sync: <strong class="text-slate-200" x-text="lastGlobalSync">Just now</strong></span>
+      </div>
+    </div>
+
+    <!-- TAB 1: STUDENT DASHBOARD -->
+    <div x-show="currentTab === 'dashboard'" x-cloak class="space-y-6">
+      
+      <!-- Filter Bar -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl space-y-4">
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+          <!-- Search input -->
+          <div class="md:col-span-1 relative">
+            <i data-lucide="search" class="w-4 h-4 absolute left-3 top-3 text-slate-400"></i>
+            <input type="text" x-model="searchQuery" placeholder="Search title, provider, rules..." class="w-full bg-slate-950 border border-slate-800 text-slate-200 text-sm rounded-xl pl-9 pr-3 py-2.5 focus:outline-none focus:border-sky-500 transition">
+          </div>
+
+          <!-- Study Level Filter -->
+          <div>
+            <select x-model="filterLevel" class="w-full bg-slate-950 border border-slate-800 text-slate-200 text-sm rounded-xl px-3 py-2.5 focus:outline-none focus:border-sky-500">
+              <option value="ALL">All Education Levels</option>
+              <option value="Undergraduate">Undergraduate</option>
+              <option value="Postgraduate">Postgraduate / Masters</option>
+              <option value="Doctoral">Doctoral / PhD</option>
+              <option value="Postdoc">Postdoctoral Fellowship</option>
+            </select>
+          </div>
+
+          <!-- Funding Category -->
+          <div>
+            <select x-model="filterCategory" class="w-full bg-slate-950 border border-slate-800 text-slate-200 text-sm rounded-xl px-3 py-2.5 focus:outline-none focus:border-sky-500">
+              <option value="ALL">All Funding Categories</option>
+              <option value="Full Tuition + Stpend">Full Tuition + Stipend</option>
+              <option value="Research Grant">Research Grant</option>
+              <option value="Partial Waiver">Partial Waiver</option>
+              <option value="Travel Grant">Travel Grant</option>
+            </select>
+          </div>
+
+          <!-- Status / Revision State -->
+          <div>
+            <select x-model="filterStatus" class="w-full bg-slate-950 border border-slate-800 text-slate-200 text-sm rounded-xl px-3 py-2.5 focus:outline-none focus:border-sky-500">
+              <option value="ALL">All Notice Statuses</option>
+              <option value="CONFIRMED">Confirmed Deadlines</option>
+              <option value="REVISED">Revised / Corrected</option>
+              <option value="UNKNOWN">Unknown / TBA Deadlines</option>
+              <option value="WITHDRAWN">Withdrawn / Cancelled</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Keyword Tags & Quick Stats -->
+        <div class="flex flex-wrap items-center justify-between pt-2 border-t border-slate-800/60 gap-2 text-xs">
+          <div class="flex items-center space-x-2">
+            <span class="text-slate-400 font-medium">Eligibility Keywords:</span>
+            <div class="flex flex-wrap gap-1.5">
+              <template x-for="kw in availableKeywords" :key="kw">
+                <button @click="toggleKeyword(kw)" 
+                        :class="selectedKeywords.includes(kw) ? 'bg-sky-500 text-white border-sky-400' : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'" 
+                        class="px-2.5 py-1 rounded-lg border transition font-mono">
+                  <span x-text="'#' + kw"></span>
+                </button>
+              </template>
+            </div>
+          </div>
+          <button @click="resetFilters()" class="text-slate-400 hover:text-sky-400 underline flex items-center gap-1">
+            <i data-lucide="rotate-ccw" class="w-3 h-3"></i> Clear Filters
+          </button>
+        </div>
+      </div>
+
+      <!-- Listings Grid -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <template x-for="item in filteredNotices" :key="item.notice_id">
+          <div class="bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-2xl p-5 shadow-lg flex flex-col justify-between transition-all relative overflow-hidden group">
+            
+            <!-- Top Tag Ribbon -->
+            <div class="flex items-start justify-between gap-2 mb-3">
+              <div>
+                <div class="flex items-center gap-2 flex-wrap mb-1">
+                  <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-slate-800 text-sky-300 border border-slate-700" x-text="item.education_level"></span>
+                  <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-indigo-950/60 text-indigo-300 border border-indigo-800/50" x-text="item.funding_category"></span>
+                  <template x-if="item.notice_status === 'REVISED'">
+                    <span class="text-xs font-bold px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30 flex items-center gap-1">
+                      <i data-lucide="alert-triangle" class="w-3 h-3"></i> Deadline Revised
+                    </span>
+                  </template>
+                  <template x-if="item.notice_status === 'WITHDRAWN'">
+                    <span class="text-xs font-bold px-2.5 py-0.5 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/30">
+                      Withdrawn
+                    </span>
+                  </template>
+                </div>
+                <h3 class="text-lg font-bold text-white group-hover:text-sky-400 transition" x-text="item.title"></h3>
+                <p class="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
+                  <i data-lucide="building-2" class="w-3.5 h-3.5 text-slate-500"></i>
+                  <span x-text="item.provider"></span>
+                  <span class="text-slate-600">•</span>
+                  <span x-text="item.region"></span>
+                </p>
+              </div>
+
+              <!-- Official Source Citation Link -->
+              <a :href="item.url" target="_blank" class="p-2 bg-slate-800 hover:bg-sky-600 text-slate-300 hover:text-white rounded-xl border border-slate-700 transition" title="Open Verifiable Source Notice">
+                <i data-lucide="external-link" class="w-4 h-4"></i>
+              </a>
+            </div>
+
+            <!-- Content Body & Residency -->
+            <div class="my-3 space-y-3 bg-slate-950/60 p-3.5 rounded-xl border border-slate-800/80">
+              <div class="text-xs text-slate-300">
+                <span class="font-semibold text-slate-400 block mb-1">Benefit Overview:</span>
+                <p x-text="item.benefit_text"></p>
+              </div>
+
+              <div class="text-xs">
+                <span class="font-semibold text-slate-400 block mb-1">Residency & Target Discipline:</span>
+                <p class="text-slate-300" x-text="item.residency_rule + ' | Discipline: ' + item.discipline"></p>
+              </div>
+
+              <!-- Eligibility Keywords Highlight (Requirement 05) -->
+              <div class="flex flex-wrap gap-1 pt-1">
+                <template x-for="kw in item.keywords" :key="kw">
+                  <span class="px-2 py-0.5 bg-slate-800/80 text-slate-300 text-[10px] font-mono rounded border border-slate-700/60" x-text="'#' + kw"></span>
+                </template>
+              </div>
+            </div>
+
+            <!-- Timezone Aware Deadline Box & Countdown -->
+            <div class="mt-2 pt-3 border-t border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div>
+                <span class="text-[10px] uppercase tracking-wider text-slate-500 font-semibold block">Official Deadline (<span x-text="item.timezone"></span>)</span>
+                <template x-if="item.due_at">
+                  <div class="text-xs font-mono font-medium text-slate-200">
+                    <span x-text="formatDateInUserTZ(item.due_at, item.timezone)"></span>
+                  </div>
+                </template>
+                <template x-if="!item.due_at">
+                  <div class="text-xs font-mono font-semibold text-amber-400 flex items-center gap-1">
+                    <i data-lucide="help-circle" class="w-3.5 h-3.5"></i> Date Not Specified by Issuer
+                  </div>
+                </template>
+              </div>
+
+              <!-- Countdown Timer -->
+              <div class="bg-slate-950 border border-slate-800 px-3 py-1.5 rounded-xl text-right self-stretch sm:self-auto flex sm:block items-center justify-between">
+                <span class="text-[10px] text-slate-400 block sm:inline">Time Remaining: </span>
+                <span class="text-xs font-mono font-bold" :class="getCountdownClass(item)" x-text="calculateCountdown(item.due_at)"></span>
+              </div>
+            </div>
+
+            <!-- Audit Trail Footnote -->
+            <div class="mt-3 text-[10px] text-slate-500 flex items-center justify-between border-t border-slate-800/40 pt-2">
+              <span>Captured: <span x-text="formatDateShort(item.captured_at)"></span></span>
+              <button @click="showHistoryModal(item)" class="text-sky-400 hover:underline flex items-center gap-1">
+                <i data-lucide="history" class="w-3 h-3"></i> View Change History (<span x-text="item.history ? item.history.length : 0"></span>)
+              </button>
+            </div>
+
+          </div>
+        </template>
+
+        <!-- Empty State -->
+        <div x-show="filteredNotices.length === 0" class="col-span-full py-12 text-center bg-slate-900/50 rounded-2xl border border-dashed border-slate-800">
+          <i data-lucide="search-x" class="w-12 h-12 text-slate-600 mx-auto mb-3"></i>
+          <h3 class="text-base font-semibold text-slate-300">No Matching Scholarships Found</h3>
+          <p class="text-xs text-slate-500 mt-1">Try adjusting your filters or search terms.</p>
+          <button @click="resetFilters()" class="mt-4 px-4 py-2 bg-sky-600 text-white text-xs font-medium rounded-xl hover:bg-sky-500 transition">
+            Reset Filters
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 2: ALERTS & CHANGE TIMELINE -->
+    <div x-show="currentTab === 'alerts'" x-cloak class="space-y-6">
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
+        <div class="flex items-center justify-between mb-6">
+          <div>
+            <h2 class="text-lg font-bold text-white flex items-center gap-2">
+              <i data-lucide="bell" class="w-5 h-5 text-amber-400"></i>
+              Real-time Notice Audit & Alert Queue
+            </h2>
+            <p class="text-xs text-slate-400 mt-1">Version-aware change comparison tracking date corrections, fee adjustments, and source updates.</p>
+          </div>
+          <span class="text-xs bg-slate-800 text-slate-300 px-3 py-1 rounded-lg border border-slate-700 font-mono" x-text="alerts.length + ' Event Logs'"></span>
+        </div>
+
+        <div class="relative border-l-2 border-slate-800 ml-4 space-y-6 pl-6">
+          <template x-for="alert in alerts" :key="alert.id">
+            <div class="relative group">
+              <!-- Timeline node dot -->
+              <div class="absolute -left-[31px] top-1 w-4 h-4 rounded-full border-2 border-slate-900" 
+                   :class="{
+                     'bg-amber-400': alert.type === 'DATE_CHANGE',
+                     'bg-emerald-400': alert.type === 'NEW_NOTICE',
+                     'bg-rose-500': alert.type === 'WITHDRAWAL',
+                     'bg-sky-400': alert.type === 'RENEWAL'
+                   }"></div>
+
+              <div class="bg-slate-950 border border-slate-800 rounded-xl p-4 shadow-md hover:border-slate-700 transition">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
+                  <div class="flex items-center space-x-2">
+                    <span class="px-2 py-0.5 text-[10px] font-bold rounded font-mono uppercase"
+                          :class="{
+                            'bg-amber-500/20 text-amber-300 border border-amber-500/30': alert.type === 'DATE_CHANGE',
+                            'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30': alert.type === 'NEW_NOTICE',
+                            'bg-rose-500/20 text-rose-300 border border-rose-500/30': alert.type === 'WITHDRAWAL',
+                            'bg-sky-500/20 text-sky-300 border border-sky-500/30': alert.type === 'RENEWAL'
+                          }" x-text="alert.type"></span>
+                    <h4 class="text-sm font-bold text-slate-200" x-text="alert.title"></h4>
+                  </div>
+                  <span class="text-[11px] font-mono text-slate-500" x-text="formatDateShort(alert.timestamp)"></span>
+                </div>
+
+                <p class="text-xs text-slate-300 mb-3" x-text="alert.description"></p>
+
+                <!-- Diff View Component -->
+                <template x-if="alert.previous_value && alert.new_value">
+                  <div class="bg-slate-900 rounded-lg p-2.5 border border-slate-800 text-xs font-mono grid grid-cols-1 sm:grid-cols-2 gap-2 my-2">
+                    <div class="bg-rose-950/30 border border-rose-900/50 p-2 rounded text-rose-300">
+                      <span class="text-[10px] text-rose-500 block uppercase font-bold">Previous Entry</span>
+                      <span x-text="alert.previous_value"></span>
+                    </div>
+                    <div class="bg-emerald-950/30 border border-emerald-900/50 p-2 rounded text-emerald-300">
+                      <span class="text-[10px] text-emerald-500 block uppercase font-bold">Updated Entry</span>
+                      <span x-text="alert.new_value"></span>
+                    </div>
+                  </div>
+                </template>
+
+                <div class="flex items-center justify-between text-[11px] text-slate-400 pt-2 border-t border-slate-900">
+                  <span class="flex items-center gap-1">
+                    <i data-lucide="link" class="w-3 h-3 text-slate-500"></i> Source Citation: <a :href="alert.source_url" target="_blank" class="text-sky-400 hover:underline truncate max-w-[200px] sm:max-w-xs" x-text="alert.source_url"></a>
+                  </span>
+                  <span class="font-mono text-slate-500" x-text="'Hash: ' + alert.content_hash.substring(0,8)"></span>
+                </div>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 3: OPERATOR & COLLECTOR ADAPTER HEALTH -->
+    <div x-show="currentTab === 'operator'" x-cloak class="space-y-6">
+      
+      <!-- Metrics Overview -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 flex items-center justify-between">
+          <div>
+            <span class="text-xs text-slate-400 block">Scraped Sources</span>
+            <span class="text-xl font-bold text-white font-mono" x-text="sources.length"></span>
+          </div>
+          <div class="p-3 bg-sky-500/10 text-sky-400 rounded-xl"><i data-lucide="globe" class="w-5 h-5"></i></div>
+        </div>
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 flex items-center justify-between">
+          <div>
+            <span class="text-xs text-slate-400 block">Total Extraction Runs</span>
+            <span class="text-xl font-bold text-white font-mono" x-text="collectorStatus.totalRuns"></span>
+          </div>
+          <div class="p-3 bg-indigo-500/10 text-indigo-400 rounded-xl"><i data-lucide="cpu" class="w-5 h-5"></i></div>
+        </div>
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 flex items-center justify-between">
+          <div>
+            <span class="text-xs text-slate-400 block">Success Rate</span>
+            <span class="text-xl font-bold text-emerald-400 font-mono">98.4%</span>
+          </div>
+          <div class="p-3 bg-emerald-500/10 text-emerald-400 rounded-xl"><i data-lucide="check-circle-2" class="w-5 h-5"></i></div>
+        </div>
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 flex items-center justify-between">
+          <div>
+            <span class="text-xs text-slate-400 block">Backoff / Retry Queue</span>
+            <span class="text-xl font-bold text-amber-400 font-mono" x-text="collectorLogs.filter(l => l.status === 'RETRY').length"></span>
+          </div>
+          <div class="p-3 bg-amber-500/10 text-amber-400 rounded-xl"><i data-lucide="alert-circle" class="w-5 h-5"></i></div>
+        </div>
+      </div>
+
+      <!-- Approved Public Sources Table -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+        <h3 class="text-base font-bold text-white flex items-center gap-2">
+          <i data-lucide="server" class="w-4 h-4 text-sky-400"></i>
+          Approved Public Announcement Sources
+        </h3>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs text-slate-300">
+            <thead class="bg-slate-950 text-slate-400 uppercase font-mono border-b border-slate-800">
+              <tr>
+                <th class="p-3">Source Name</th>
+                <th class="p-3">Base URL / Domain</th>
+                <th class="p-3">Robots.txt Status</th>
+                <th class="p-3">Rate Limit</th>
+                <th class="p-3">Last Checked</th>
+                <th class="p-3 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-800/60">
+              <template x-for="src in sources" :key="src.id">
+                <tr class="hover:bg-slate-800/40 transition">
+                  <td class="p-3 font-semibold text-slate-200" x-text="src.name"></td>
+                  <td class="p-3 font-mono text-slate-400" x-text="src.url"></td>
+                  <td class="p-3">
+                    <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1 w-fit">
+                      <i data-lucide="check" class="w-3 h-3"></i> Allowed
+                    </span>
+                  </td>
+                  <td class="p-3 font-mono text-slate-400" x-text="src.rate_limit"></td>
+                  <td class="p-3 font-mono text-slate-400" x-text="formatDateShort(src.last_checked)"></td>
+                  <td class="p-3 text-right">
+                    <button @click="testSourceAdapter(src.id)" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-sky-400 border border-slate-700 rounded transition font-mono text-[11px]">
+                      Test Adapter
+                    </button>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Real-Time Scraper Console / Logs -->
+      <div class="bg-slate-950 border border-slate-800 rounded-2xl p-5 font-mono shadow-2xl">
+        <div class="flex items-center justify-between pb-3 mb-3 border-b border-slate-800">
+          <div class="flex items-center space-x-2">
+            <div class="w-3 h-3 rounded-full bg-rose-500"></div>
+            <div class="w-3 h-3 rounded-full bg-amber-500"></div>
+            <div class="w-3 h-3 rounded-full bg-emerald-500"></div>
+            <span class="text-xs text-slate-400 ml-2 font-bold">Collector Telemetry & Adapter Execution Log</span>
+          </div>
+          <button @click="collectorLogs = []" class="text-[11px] text-slate-500 hover:text-slate-300 underline">Clear Terminal</button>
+        </div>
+
+        <div class="space-y-2 text-xs max-h-64 overflow-y-auto pr-2">
+          <template x-for="(log, idx) in collectorLogs" :key="idx">
+            <div class="flex items-start space-x-2">
+              <span class="text-slate-600 shrink-0" x-text="log.timestamp"></span>
+              <span class="px-1.5 py-0.2 rounded text-[10px] shrink-0 font-bold"
+                    :class="{
+                      'bg-emerald-950 text-emerald-400': log.status === 'OK',
+                      'bg-amber-950 text-amber-400': log.status === 'RETRY',
+                      'bg-rose-950 text-rose-400': log.status === 'FAIL',
+                      'bg-sky-950 text-sky-400': log.status === 'INFO'
+                    }" x-text="log.status"></span>
+              <span class="text-slate-300" x-text="log.message"></span>
+            </div>
+          </template>
+        </div>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- MODAL: CHANGE HISTORY & AUDIT TRAIL -->
+  <div x-show="activeHistoryModal" x-cloak class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" @keydown.escape.window="activeHistoryModal = null">
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-xl w-full p-6 shadow-2xl space-y-4" @click.away="activeHistoryModal = null">
+      <div class="flex items-start justify-between border-b border-slate-800 pb-3">
+        <div>
+          <span class="text-xs text-sky-400 font-mono uppercase font-semibold">Audit Version History</span>
+          <h3 class="text-base font-bold text-white" x-text="activeHistoryModal ? activeHistoryModal.title : ''"></h3>
+        </div>
+        <button @click="activeHistoryModal = null" class="p-1 text-slate-400 hover:text-white">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="space-y-3 max-h-80 overflow-y-auto pr-1">
+        <template x-if="activeHistoryModal && activeHistoryModal.history">
+          <template x-for="(h, i) in activeHistoryModal.history" :key="i">
+            <div class="bg-slate-950 border border-slate-800 p-3 rounded-xl text-xs space-y-1">
+              <div class="flex justify-between text-slate-400 font-mono text-[10px]">
+                <span x-text="'Version ' + h.version"></span>
+                <span x-text="formatDateShort(h.timestamp)"></span>
+              </div>
+              <p class="font-medium text-slate-200" x-text="h.change_summary"></p>
+              <div class="text-[11px] font-mono text-slate-400 bg-slate-900 p-2 rounded mt-1">
+                <span>Recorded Deadline: </span>
+                <span class="text-sky-300" x-text="h.deadline ? h.deadline : 'UNKNOWN / Unspecified'"></span>
+              </div>
+            </div>
+          </template>
+        </template>
+      </div>
+
+      <div class="pt-2 text-right">
+        <button @click="activeHistoryModal = null" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold">
+          Close Audit Window
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <footer class="border-t border-slate-800 bg-slate-950 py-4 mt-auto">
+    <div class="max-w-7xl mx-auto px-4 text-center text-xs text-slate-500 flex flex-col sm:flex-row items-center justify-between gap-2">
+      <p>© 2026 Cybernaut ScholarTrack SRS Demo. Verifiable Public Notice Engine.</p>
+      <p class="font-mono text-[11px]">Compliant with Web Scraping SRS Guidelines • No Private Data Collection</p>
+    </div>
+  </footer>
+
+  <!-- App Application Logic (AlpineJS Data & Real-time Functions) -->
+  <script>
+    function scholarTrackApp() {
+      return {
+        currentTab: 'dashboard',
+        isScraping: false,
+        searchQuery: '',
+        filterLevel: 'ALL',
+        filterCategory: 'ALL',
+        filterStatus: 'ALL',
+        selectedKeywords: [],
+        userTimezone: 'Asia/Kolkata', // Default timezone as per student context
+        lastGlobalSync: 'Just now',
+        activeHistoryModal: null,
+
+        availableKeywords: ['STEM', 'WomenInTech', 'NeedsBased', 'Merit', 'Postgrad', 'Europe', 'Global'],
+
+        // Approved Public Data Sources
+        sources: [
+          { id: 1, name: 'DAAD International Scholarships Portal', url: 'https://www2.daad.de/deutschland/stipendium/', rate_limit: '1 req / 3.0s', last_checked: new Date().toISOString() },
+          { id: 2, name: 'Fulbright Foreign Student Program Feed', url: 'https://foreign.fulbrightonline.org/about', rate_limit: '1 req / 5.0s', last_checked: new Date().toISOString() }
+        ],
+
+        // Scraper Terminal Logs
+        collectorLogs: [
+          { timestamp: '19:00:02', status: 'INFO', message: 'Initializing Collector Adapter v2.1 with rate-limit governor...' },
+          { timestamp: '19:00:04', status: 'OK', message: 'Fetched https://www2.daad.de - HTTP 200 (Robots.txt compliant)' },
+          { timestamp: '19:00:05', status: 'OK', message: 'Normalized 2 notices. Content Hash verified.' },
+          { timestamp: '19:00:08', status: 'OK', message: 'Fetched https://foreign.fulbrightonline.org - HTTP 200' }
+        ],
+
+        // Collector Health Counters
+        collectorStatus: {
+          totalRuns: 142,
+          failed: 0
+        },
+
+        // Primary Verified Notices Repository (Dataset)
+        notices: [
+          {
+            notice_id: 'DAAD-2026-01',
+            source_id: 1,
+            title: 'DAAD Development-Related Postgraduate Courses (EPOS)',
+            provider: 'German Academic Exchange Service',
+            education_level: 'Postgraduate',
+            discipline: 'Engineering, Environmental Sciences & Tech',
+            region: 'Germany / Europe',
+            funding_category: 'Full Tuition + Stipend',
+            benefit_text: 'Monthly allowance of €934 + full tuition waiver + travel grant + health insurance.',
+            residency_rule: 'Applicants from Developing Countries with 2+ years work experience.',
+            due_at: '2026-11-30T23:59:59Z',
+            timezone: 'UTC',
+            keywords: ['STEM', 'Merit', 'Europe', 'Postgrad'],
+            captured_at: '2026-10-01T10:00:00Z',
+            notice_status: 'CONFIRMED',
+            url: 'https://www2.daad.de/deutschland/stipendium/en/',
+            history: [
+              { version: 1, timestamp: '2026-10-01T10:00:00Z', deadline: '2026-11-30T23:59:59Z', change_summary: 'Initial notice indexed from official DAAD portal.' }
+            ]
+          },
+          {
+            notice_id: 'FULB-2026-88',
+            source_id: 2,
+            title: 'Fulbright Foreign Student Program 2027',
+            provider: 'US Department of State / IIE',
+            education_level: 'Doctoral',
+            discipline: 'All Academic Fields except Clinical Medicine',
+            region: 'USA',
+            funding_category: 'Full Tuition + Stipend',
+            benefit_text: 'Full tuition funding, monthly stipend, roundtrip airfare, and J-1 visa sponsorship.',
+            residency_rule: 'Non-US citizens residing in eligible partner countries.',
+            due_at: '2026-10-31T17:00:00-04:00', // Eastern Time
+            timezone: 'America/New_York',
+            keywords: ['Global', 'Merit', 'STEM'],
+            captured_at: '2026-09-15T14:30:00Z',
+            notice_status: 'REVISED',
+            url: 'https://foreign.fulbrightonline.org/',
+            history: [
+              { version: 1, timestamp: '2026-09-15T14:30:00Z', deadline: '2026-10-15T23:59:00Z', change_summary: 'Initial listing announcement.' },
+              { version: 2, timestamp: '2026-10-05T09:12:00Z', deadline: '2026-10-31T17:00:00-04:00', change_summary: 'Deadline extension issued by commission due to portal maintenance.' }
+            ]
+          },
+          {
+            notice_id: 'EAS-2026-03',
+            source_id: 1,
+            title: 'Erasmus Mundus Joint Master Degree in Cyber Security',
+            provider: 'European Commission',
+            education_level: 'Postgraduate',
+            discipline: 'Computer Science & Cybersecurity',
+            region: 'EU Multi-country',
+            funding_category: 'Full Tuition + Stipend',
+            benefit_text: '€1,400 per month stipend + full tuition cover across 3 partner universities.',
+            residency_rule: 'Open worldwide to Bachelor degree holders in IT/CS.',
+            due_at: '2026-12-15T23:59:59+01:00',
+            timezone: 'Europe/London',
+            keywords: ['STEM', 'WomenInTech', 'Europe', 'Global'],
+            captured_at: '2026-10-10T08:00:00Z',
+            notice_status: 'CONFIRMED',
+            url: 'https://eacea.ec.europa.eu/erasmus-plus_en',
+            history: [
+              { version: 1, timestamp: '2026-10-10T08:00:00Z', deadline: '2026-12-15T23:59:59+01:00', change_summary: 'New cycle published.' }
+            ]
+          },
+          {
+            notice_id: 'CWR-2026-12',
+            source_id: 2,
+            title: 'Commonwealth Doctoral Fellowships',
+            provider: 'Commonwealth Scholarship Commission',
+            education_level: 'Doctoral',
+            discipline: 'Engineering, Health Sciences, Policy',
+            region: 'United Kingdom',
+            funding_category: 'Research Grant',
+            benefit_text: 'Approved tuition fees, stipend of £1,347/month (£1,652 in London), travel allowance.',
+            residency_rule: 'Citizens or permanent residents of Commonwealth nations.',
+            due_at: null, // Test case for UNKNOWN deadline Requirement 05
+            timezone: 'UTC',
+            keywords: ['Global', 'NeedsBased'],
+            captured_at: '2026-10-18T11:20:00Z',
+            notice_status: 'UNKNOWN',
+            url: 'https://cscuk.fcdo.gov.uk/scholarships/',
+            history: [
+              { version: 1, timestamp: '2026-10-18T11:20:00Z', deadline: null, change_summary: 'Preliminary notice parsed. Exact deadline date unknown on official site.' }
+            ]
+          }
+        ],
+
+        // Change Alert History Queue
+        alerts: [
+          {
+            id: 'ALT-101',
+            type: 'DATE_CHANGE',
+            title: 'Deadline Extension Announced: Fulbright Foreign Student Program',
+            description: 'The issuing body revised the submission deadline. System recorded change and updated timezone countdown.',
+            previous_value: '2026-10-15T23:59:00Z (EST)',
+            new_value: '2026-10-31T17:00:00-04:00 (EST)',
+            source_url: 'https://foreign.fulbrightonline.org/',
+            content_hash: 'a8f9c10d32e4',
+            timestamp: '2026-10-05T09:12:00Z'
+          },
+          {
+            id: 'ALT-102',
+            type: 'NEW_NOTICE',
+            title: 'New Notice Added: Erasmus Mundus Cyber Security',
+            description: 'Collector Adapter successfully validated new notice schema with verified source URL citation.',
+            previous_value: null,
+            new_value: '2026-12-15 (EU Central)',
+            source_url: 'https://eacea.ec.europa.eu/erasmus-plus_en',
+            content_hash: 'f2d84711e9a0',
+            timestamp: '2026-10-10T08:00:00Z'
+          }
+        ],
+
+        initApp() {
+          // Initialize Lucide icons
+          this.$nextTick(() => { lucide.createIcons(); });
+
+          // Start interval for live countdown update
+          setInterval(() => {
+            // Triggers reactivity for countdowns
+            this.lastGlobalSync = this.lastGlobalSync;
+          }, 1000);
+        },
+
+        // Filter Logic
+        get filteredNotices() {
+          return this.notices.filter(item => {
+            // Text Search Match
+            const matchesSearch = this.searchQuery === '' || 
+              item.title.toLowerCase().includes(this.searchQuery.toLowerCase()) ||
+              item.provider.toLowerCase().includes(this.searchQuery.toLowerCase()) ||
+              item.residency_rule.toLowerCase().includes(this.searchQuery.toLowerCase());
+
+            // Study Level Match
+            const matchesLevel = this.filterLevel === 'ALL' || item.education_level === this.filterLevel;
+
+            // Funding Category Match
+            const matchesCategory = this.filterCategory === 'ALL' || item.funding_category === this.filterCategory;
+
+            // Notice Status Match
+            const matchesStatus = this.filterStatus === 'ALL' || item.notice_status === this.filterStatus;
+
+            // Keyword Filter Match
+            const matchesKeywords = this.selectedKeywords.length === 0 || 
+              this.selectedKeywords.every(kw => item.keywords.includes(kw));
+
+            return matchesSearch && matchesLevel && matchesCategory && matchesStatus && matchesKeywords;
+          });
+        },
+
+        toggleKeyword(kw) {
+          if (this.selectedKeywords.includes(kw)) {
+            this.selectedKeywords = this.selectedKeywords.filter(k => k !== kw);
+          } else {
+            this.selectedKeywords.push(kw);
+          }
+        },
+
+        resetFilters() {
+          this.searchQuery = '';
+          this.filterLevel = 'ALL';
+          this.filterCategory = 'ALL';
+          this.filterStatus = 'ALL';
+          this.selectedKeywords = [];
+        },
+
+        // Timezone Helper Functions
+        formatDateInUserTZ(dateString, originalTZ) {
+          if (!dateString) return 'Unspecified Date';
+          try {
+            const date = new Date(dateString);
+            const options = { 
+              timeZone: this.userTimezone,
+              year: 'numeric', 
+              month: 'short', 
+              day: 'numeric',
+              hour: '2-digit', 
+              minute: '2-digit',
+              timeZoneName: 'short'
+            };
+            return new Intl.DateTimeFormat('en-US', options).format(date);
+          } catch (e) {
+            return dateString;
+          }
+        },
+
+        formatDateShort(isoString) {
+          if (!isoString) return 'N/A';
+          const d = new Date(isoString);
+          return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        },
+
+        // Real-Time Countdown Engine
+        calculateCountdown(dueIso) {
+          if (!dueIso) return 'TBA / Unknown';
+          
+          const now = new Date().getTime();
+          const target = new Date(dueIso).getTime();
+          const diff = target - now;
+
+          if (diff <= 0) return 'EXPIRED / CLOSED';
+
+          const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+          const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+          const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+          const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+
+          if (days > 0) {
+            return `${days}d ${hours}h ${minutes}m remaining`;
+          }
+          return `${hours}h ${minutes}m ${seconds}s remaining`;
+        },
+
+        getCountdownClass(item) {
+          if (!item.due_at) return 'text-amber-400';
+          const diff = new Date(item.due_at).getTime() - new Date().getTime();
+          if (diff <= 0) return 'text-rose-500';
+          if (diff < 86400000 * 7) return 'text-amber-400 animate-pulse'; // less than 7 days
+          return 'text-emerald-400';
+        },
+
+        // Modal Handler
+        showHistoryModal(notice) {
+          this.activeHistoryModal = notice;
+          this.$nextTick(() => { lucide.createIcons(); });
+        },
+
+        // Adapter Simulation Execution
+        triggerManualCollector() {
+          this.isScraping = true;
+          this.addLog('INFO', 'Manual scraping cycle initiated by user operator.');
+
+          setTimeout(() => {
+            this.addLog('OK', 'Connected to Source 1 (DAAD). Header check passed.');
+          }, 600);
+
+          setTimeout(() => {
+            this.addLog('OK', 'Connected to Source 2 (Fulbright). Rate limit buffer: 5.0s');
+          }, 1200);
+
+          setTimeout(() => {
+            this.isScraping = false;
+            this.collectorStatus.totalRuns += 1;
+            this.lastGlobalSync = new Date().toLocaleTimeString();
+            this.addLog('OK', 'Collection complete. 0 new changes detected. All hashes verified.');
+          }, 2000);
+        },
+
+        testSourceAdapter(id) {
+          const src = this.sources.find(s => s.id === id);
+          if (!src) return;
+          
+          this.addLog('INFO', `Testing connection & parser for [${src.name}]...`);
+          setTimeout(() => {
+            src.last_checked = new Date().toISOString();
+            this.addLog('OK', `Adapter [${src.name}] returned 200 OK. Structural CSS selectors valid.`);
+          }, 800);
+        },
+
+        addLog(status, message) {
+          const time = new Date().toLocaleTimeString();
+          this.collectorLogs.unshift({ timestamp: time, status, message });
+        }
+      }
+    }
+  </script>
+</body>
+</html>
